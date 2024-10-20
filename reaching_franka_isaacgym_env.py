@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+from joint_failure import JointFailure
 
 from isaacgym import gymtorch, gymapi
 
@@ -124,6 +125,10 @@ class ReachingFrankaTask(VecTask):
             self.jacobian = gymtorch.wrap_tensor(jacobian_tensor)
             self.jacobian_end_effector = self.jacobian[:, self.rigid_body_dict_robot[self._end_effector_link] - 1, :, :7]
 
+        # Testing single joint failure
+        self.joint_3_failure = JointFailure(failure_type='intermittent', dof_num=2,
+                failure_prob=0.25, num_envs=self.num_envs, max_ep_len=self.max_episode_length)
+        
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
 
     def create_sim(self):
@@ -335,6 +340,10 @@ class ReachingFrankaTask(VecTask):
         self.reset_buf[env_ids] = 0
         self.progress_buf[env_ids] = 0
 
+        # Reset joint failure info
+        self.joint_3_failure.reset(env_ids=env_ids)
+
+        # Find a better place for the viwer code
         self.gym.viewer_camera_look_at(
             self.viewer, None, gymapi.Vec3(2, 2, 2), gymapi.Vec3(0,0,0))
 
@@ -353,9 +362,12 @@ class ReachingFrankaTask(VecTask):
                                               goal_orientation=None)
             targets = self.robot_dof_targets[:, :7] + delta_dof_pos
 
-        targets[:,2] = self.dof_pos[:,2]
+        if self.headless == False:
+            print('[Before] Diff b/w target and dof: ' + str(self.dof_pos[:,2]-targets[:,2]))
+        self.joint_3_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
 
-        # print('Targets : ', str(targets))
+        if self.headless == False:
+            print('[After] Diff b/w target and dof: ' + str(self.dof_pos[:,2]-targets[:,2]))
 
         self.robot_dof_targets[:, :7] = torch.clamp(targets, self.robot_dof_lower_limits[:7], self.robot_dof_upper_limits[:7])
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.robot_dof_targets))
