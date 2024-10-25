@@ -126,7 +126,7 @@ class ReachingFrankaTask(VecTask):
             self.jacobian_end_effector = self.jacobian[:, self.rigid_body_dict_robot[self._end_effector_link] - 1, :, :7]
 
         # Testing single joint failure
-        self.joint_3_failure = JointFailure(failure_type='intermittent', dof_num=2,
+        self.joint_3_failure = JointFailure(failure_type='none', dof_num=2,
                 failure_prob=0.25, num_envs=self.num_envs, max_ep_len=self.max_episode_length)
         
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -179,6 +179,7 @@ class ReachingFrankaTask(VecTask):
         robot_dof_props = self.gym.get_asset_dof_properties(robot_asset)
         self.robot_dof_lower_limits = []
         self.robot_dof_upper_limits = []
+        self.robot_dof_speed_limits = []
         for i in range(9):
             robot_dof_props["driveMode"][i] = gymapi.DOF_MODE_POS
             if self.physics_engine == gymapi.SIM_PHYSX:
@@ -190,10 +191,12 @@ class ReachingFrankaTask(VecTask):
 
             self.robot_dof_lower_limits.append(robot_dof_props["lower"][i])
             self.robot_dof_upper_limits.append(robot_dof_props["upper"][i])
+            self.robot_dof_speed_limits.append(robot_dof_props["velocity"][i])
 
         self.robot_dof_lower_limits = torch.tensor(self.robot_dof_lower_limits, device=self.device)
         self.robot_dof_upper_limits = torch.tensor(self.robot_dof_upper_limits, device=self.device)
         self.robot_dof_speed_scales = torch.ones_like(self.robot_dof_lower_limits)
+        self.robot_dof_speed_limits = torch.tensor(self.robot_dof_speed_limits, device=self.device)
         robot_dof_props["effort"][7] = 200
         robot_dof_props["effort"][8] = 200
 
@@ -288,14 +291,18 @@ class ReachingFrankaTask(VecTask):
         target_rot = self.root_rot[:, 1]
 
         dof_pos_scaled = 2.0 * (robot_dof_pos - self.robot_dof_lower_limits) \
-            / (self.robot_dof_upper_limits - self.robot_dof_lower_limits) - 1.0
-        dof_vel_scaled = robot_dof_vel * self._dof_vel_scale
+            / (self.robot_dof_upper_limits - self.robot_dof_lower_limits) - 1.0 \
+            + (2* torch.rand((robot_dof_pos.shape[0],9), device=self.device) - 1) * 0.01
+        
+        # dof_vel_scaled = robot_dof_vel * self._dof_vel_scale
+        dof_vel_scaled = robot_dof_vel / self.robot_dof_speed_limits \
+            + (2* torch.rand((robot_dof_vel.shape[0],9), device=self.device) - 1) * 0.01
 
-        generalization_noise = torch.rand((dof_vel_scaled.shape[0], 7), device=self.device) + 0.5
+        # generalization_noise = torch.rand((dof_vel_scaled.shape[0], 7), device=self.device) + 0.5
 
         self.obs_buf[:, 0] = self.progress_buf / self.max_episode_length
         self.obs_buf[:, 1:8] = dof_pos_scaled[:, :7]
-        self.obs_buf[:, 8:15] = dof_vel_scaled[:, :7] * generalization_noise
+        self.obs_buf[:, 8:15] = dof_vel_scaled[:, :7] # * generalization_noise
         self.obs_buf[:, 15:18] = target_pos
 
         # compute distance for compute_reward()
@@ -303,7 +310,7 @@ class ReachingFrankaTask(VecTask):
 
     def reset_idx(self, env_ids):
         # reset robot
-        pos = torch.clamp(self.robot_default_dof_pos.unsqueeze(0) + 0.25 * (torch.rand((len(env_ids), self.num_robot_dofs), device=self.device) - 0.5),
+        pos = torch.clamp(self.robot_default_dof_pos.unsqueeze(0) + 1 * (torch.rand((len(env_ids), self.num_robot_dofs), device=self.device) - 0.5),
                           self.robot_dof_lower_limits, self.robot_dof_upper_limits)
         pos[:, 7:] = 0
 
@@ -362,12 +369,7 @@ class ReachingFrankaTask(VecTask):
                                               goal_orientation=None)
             targets = self.robot_dof_targets[:, :7] + delta_dof_pos
 
-        if self.headless == False:
-            print('[Before] Diff b/w target and dof: ' + str(self.dof_pos[:,2]-targets[:,2]))
         self.joint_3_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
-
-        if self.headless == False:
-            print('[After] Diff b/w target and dof: ' + str(self.dof_pos[:,2]-targets[:,2]))
 
         self.robot_dof_targets[:, :7] = torch.clamp(targets, self.robot_dof_lower_limits[:7], self.robot_dof_upper_limits[:7])
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.robot_dof_targets))
