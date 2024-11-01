@@ -32,7 +32,13 @@ TASK_CFG = {"name": "ReachingFranka",
                     "actionScale": 2.5,
                     "dofVelocityScale": 0.1,
                     "controlSpace": "cartesian",
-                    "enableCameraSensors": False},
+                    "enableCameraSensors": False,
+                    "enableCurriculum": True,
+                    "curriculum": {
+                        "joints": [1, 3, 5],
+                        "failure": 'complete'
+                        }
+                    },
             "sim": {"dt": 0.0083,  # 1 / 120
                     "substeps": 1,
                     "up_axis": "z",
@@ -70,6 +76,7 @@ class ReachingFrankaTask(VecTask):
         self._dof_vel_scale = self.cfg["env"]["dofVelocityScale"]
         self._control_space = self.cfg["env"]["controlSpace"]
         self.max_episode_length = self.cfg["env"]["episodeLength"]  # name required for VecTask
+        self.max_timestep = self.cfg["env"]["timesteps"]
 
         self.debug_viz = self.cfg["env"]["enableDebugVis"]
 
@@ -81,8 +88,18 @@ class ReachingFrankaTask(VecTask):
             self.cfg["env"]["numActions"] = 3
         else:
             raise ValueError("Invalid control space: {}".format(self._control_space))
+        
+        self.useCurriculum = self.cfg["env"]["enableCurriculum"]
+        if self.useCurriculum:
+            self.curriculum_config = self.cfg["env"]["curriculum"]
+            self.curriculum_switch_ratio = np.array(
+                [ i/len(self.curriculum_config['joints']) for i in range(len(self.curriculum_config['joints'])) ]
+            )
+        else:
+            self.curriculum_config = None
 
         self._end_effector_link = "panda_leftfinger"
+        # self._end_effector_link = "fr3_leftfinger"
 
         # setup VecTask
         super().__init__(config=self.cfg,
@@ -126,9 +143,10 @@ class ReachingFrankaTask(VecTask):
             self.jacobian_end_effector = self.jacobian[:, self.rigid_body_dict_robot[self._end_effector_link] - 1, :, :7]
 
         # Testing single joint failure
-        self.joint_3_failure = JointFailure(failure_type='none', dof_num=2,
+        self.joint_failure = JointFailure(failure_type=self.curriculum_config['failure'], dof_ids=[self.curriculum_config['joints'][0]],
                 failure_prob=0.25, num_envs=self.num_envs, max_ep_len=self.max_episode_length)
         
+        self.timestep = 0
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
 
     def create_sim(self):
@@ -151,6 +169,7 @@ class ReachingFrankaTask(VecTask):
 
         asset_root = os.path.join(os.path.dirname(os.path.abspath(isaacgymenvs.__file__)), "../assets")
         robot_asset_file = "urdf/franka_description/robots/franka_panda.urdf"
+        # robot_asset_file = "urdf/franka_description/robots/fr3_franka_hand.urdf"
 
         # robot asset
         asset_options = gymapi.AssetOptions()
@@ -161,6 +180,7 @@ class ReachingFrankaTask(VecTask):
         asset_options.thickness = 0.001
         asset_options.default_dof_drive_mode = gymapi.DOF_MODE_POS
         asset_options.use_mesh_materials = True
+        # asset_options.replace_cylinder_with_capsule = False
         robot_asset = self.gym.load_asset(self.sim, asset_root, robot_asset_file, asset_options)
 
         # target asset
@@ -309,6 +329,16 @@ class ReachingFrankaTask(VecTask):
         self._computed_distance = torch.norm(self.end_effector_pos - target_pos, dim=-1)
 
     def reset_idx(self, env_ids):
+
+        # Apply curriculum
+        if self.max_timestep > 0:
+            completion_ratio = self.timestep / self.max_timestep
+            completion_check = np.where(completion_ratio < self.curriculum_switch_ratio)[0]
+            if len(completion_check) > 0:
+                self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'][:np.min(completion_check)])
+            else:
+                self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'])
+
         # reset robot
         pos = torch.clamp(self.robot_default_dof_pos.unsqueeze(0) + 1 * (torch.rand((len(env_ids), self.num_robot_dofs), device=self.device) - 0.5),
                           self.robot_dof_lower_limits, self.robot_dof_upper_limits)
@@ -348,7 +378,7 @@ class ReachingFrankaTask(VecTask):
         self.progress_buf[env_ids] = 0
 
         # Reset joint failure info
-        self.joint_3_failure.reset(env_ids=env_ids)
+        self.joint_failure.reset(env_ids=env_ids)
 
         # Find a better place for the viwer code
         self.gym.viewer_camera_look_at(
@@ -369,7 +399,7 @@ class ReachingFrankaTask(VecTask):
                                               goal_orientation=None)
             targets = self.robot_dof_targets[:, :7] + delta_dof_pos
 
-        self.joint_3_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
+        self.joint_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
 
         self.robot_dof_targets[:, :7] = torch.clamp(targets, self.robot_dof_lower_limits[:7], self.robot_dof_upper_limits[:7])
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.robot_dof_targets))
@@ -380,6 +410,8 @@ class ReachingFrankaTask(VecTask):
         env_ids = self.reset_buf.nonzero(as_tuple=False).squeeze(-1)
         if len(env_ids) > 0:
             self.reset_idx(env_ids)
-
+        
+        self.timestep += 1
+        
         self.compute_observations()
         self.compute_reward()

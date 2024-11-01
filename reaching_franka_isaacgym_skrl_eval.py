@@ -33,12 +33,14 @@ class Policy(GaussianMixin, Model):
 
 # instantiate and configure the task
 headless = False  # set headless to False for rendering
+MAX_TIMESTEPS = 1000
 
 from reaching_franka_isaacgym_env import ReachingFrankaTask, TASK_CFG
 
 TASK_CFG["headless"] = headless
 TASK_CFG["env"]["numEnvs"] = 1
 TASK_CFG["env"]["controlSpace"] = "joint"  # "joint" or "cartesian"
+TASK_CFG["env"]["timesteps"] = MAX_TIMESTEPS
 
 env = ReachingFrankaTask(cfg=TASK_CFG)
 
@@ -77,7 +79,13 @@ agent = PPO(models=models_ppo,
 # load checkpoints
 if TASK_CFG["env"]["controlSpace"] == "joint":
     # agent.load("./agent_joint_isaacgym.pt")
-    agent.load("runs/24-10-19_14-19-40-823963_PPO/checkpoints/best_agent.pt")
+    # agent.load("runs/NoFailures/checkpoints/best_agent.pt")
+    # agent.load("runs/All_env_joint_3_complete_failure/checkpoints/best_agent.pt")
+    # agent.load("runs/joint_3_fails_midway/checkpoints/best_agent.pt")
+    # agent.load("runs/Randomly_select_envs_for_joint_3_complete_failure/checkpoints/best_agent.pt")
+
+    # Test weights
+    agent.load("runs/24-11-01_00-01-10-541279_PPO/checkpoints/best_agent.pt")
 elif TASK_CFG["env"]["controlSpace"] == "cartesian":
     # agent.load("./agent_cartesian_isaacgym.pt")
     agent.load("./best_agent.pt")
@@ -85,7 +93,7 @@ elif TASK_CFG["env"]["controlSpace"] == "cartesian":
 
 
 # Configure and instantiate the RL trainer
-cfg_trainer = {"timesteps": 1000, "headless": True}
+cfg_trainer = {"timesteps": MAX_TIMESTEPS, "headless": True}
 trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=agent)
 
 # start evaluation

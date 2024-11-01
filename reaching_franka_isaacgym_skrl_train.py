@@ -58,12 +58,14 @@ class Value(DeterministicMixin, Model):
 
 # instantiate and configure the task
 headless = True  # set headless to False for rendering
+MAX_TIMESTEPS = 25000
 
 from reaching_franka_isaacgym_env import ReachingFrankaTask, TASK_CFG
 
 TASK_CFG["headless"] = headless
-TASK_CFG["env"]["numEnvs"] = 1024*2
+TASK_CFG["env"]["numEnvs"] = 1024
 TASK_CFG["env"]["controlSpace"] = "joint"  # "joint" or "cartesian"
+TASK_CFG["env"]["timesteps"] = MAX_TIMESTEPS
 
 env = ReachingFrankaTask(cfg=TASK_CFG)
 
@@ -123,7 +125,7 @@ agent = PPO(models=models_ppo,
 
 
 # Configure and instantiate the RL trainer
-cfg_trainer = {"timesteps": 5000, "headless": True}
+cfg_trainer = {"timesteps": MAX_TIMESTEPS, "headless": True}
 trainer = SequentialTrainer(cfg=cfg_trainer, env=env, agents=agent)
 
 # start training
