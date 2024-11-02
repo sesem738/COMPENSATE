@@ -23,6 +23,7 @@ class JointFailure:
         if type(failure_prob) is float:
             self.failure_prob = failure_prob
         self.fail_time[env_ids] = torch.randint(0,self.max_ep_len,(len(env_ids),)).to(self.device)
+        self.initial_select_envs_to_fail = self.fail_time < (self.max_ep_len * self.env_selection_prob)
 
         # print('Env has failure: ' + str(self.fail_time < (self.max_ep_len * 0.5)))
     
@@ -30,6 +31,7 @@ class JointFailure:
         self.dof_ids = torch.from_numpy(
             np.random.choice(dof_ids,self.num_envs).astype(int)
             ).to(device=self.device)
+        self.env_selection_prob = 1 / (len(dof_ids) + 1)
     
     def apply(self, current_dofs, targets_dofs, current_step):
         """ Method to apply joint failures.
@@ -40,7 +42,7 @@ class JointFailure:
 
         # Joint never works with 50% probability of episode selection
         if self.failure_type == 'complete':
-            select_envs = self.fail_time < (self.max_ep_len * 0.5)
+            select_envs = self.initial_select_envs_to_fail
             select_dof_ids = self.dof_ids[select_envs]
             # print('Failing env: ' + str(select_envs) + ', Failing joint: ' + str(select_dof_ids))
             targets_dofs[select_envs,select_dof_ids] = current_dofs[select_envs,select_dof_ids]
@@ -48,21 +50,30 @@ class JointFailure:
         
         # Joint fails based on input probablility
         elif (self.failure_type == 'intermittent'):
-            select_envs = self.failure_prob > torch.rand(targets_dofs.shape[0]).to(self.device)
+            select_envs = (
+                self.initial_select_envs_to_fail
+                and (self.failure_prob > torch.rand(targets_dofs.shape[0]).to(self.device))
+                )
             select_dof_ids = self.dof_ids[select_envs]
             targets_dofs[select_envs,select_dof_ids] = current_dofs[select_envs,select_dof_ids]
             self.envs_joints_failed[select_envs] = select_dof_ids
         
         # Joint stops working after randomly determined step, fail_time set at episode reset
         elif (self.failure_type == 'fails_midway'):
-            select_envs = current_step >= self.fail_time
+            select_envs = (
+                self.initial_select_envs_to_fail
+                and (current_step >= self.fail_time)
+                )
             select_dof_ids = self.dof_ids[select_envs]
             targets_dofs[select_envs,select_dof_ids] = current_dofs[select_envs,select_dof_ids]
             self.envs_joints_failed[select_envs] = select_dof_ids
 
         # Joint starts working after randomly determined step, fail_time set at episode reset
         elif (self.failure_type == 'works_midway'):
-            select_envs = current_step < self.fail_time
+            select_envs = (
+                self.initial_select_envs_to_fail
+                and (current_step < self.fail_time)
+                )
             select_dof_ids = self.dof_ids[select_envs]
             targets_dofs[select_envs,select_dof_ids] = current_dofs[select_envs,select_dof_ids]
             self.envs_joints_failed[select_envs] = select_dof_ids
