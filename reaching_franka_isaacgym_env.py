@@ -283,7 +283,12 @@ class ReachingFrankaTask(VecTask):
             self.end_effector_rot = torch.zeros((self.num_envs, 4), device=self.device)
 
     def compute_reward(self):
-        self.rew_buf[:] = -self._computed_distance
+
+        # If predicted failed joint id is == actual failed joint id, reward
+        pred_reward = torch.where(self.pred_fail_joint == self.joint_failure.get_env_joint_failure_indices(), 0.5, -0.5)
+        # print(f"Prediction Reward: {pred_reward}")
+
+        self.rew_buf[:] = -self._computed_distance + pred_reward
 
         self.reset_buf.fill_(0)
         # target reached
@@ -400,6 +405,8 @@ class ReachingFrankaTask(VecTask):
             targets = self.robot_dof_targets[:, :7] + delta_dof_pos
 
         self.joint_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
+
+        self.pred_fail_joint = actions[:, -1]
 
         self.robot_dof_targets[:, :7] = torch.clamp(targets, self.robot_dof_lower_limits[:7], self.robot_dof_upper_limits[:7])
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.robot_dof_targets))
