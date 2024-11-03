@@ -287,6 +287,7 @@ class ReachingFrankaTask(VecTask):
         # If predicted failed joint id is == actual failed joint id, reward
         pred_reward = torch.where(self.pred_fail_joint == self.joint_failure.get_env_joint_failure_indices(), 0.5, -0.5)
         # print(f"Prediction Reward: {pred_reward}")
+        print(self.pred_fail_joint, self.joint_failure.get_env_joint_failure_indices())
 
         self.rew_buf[:] = -self._computed_distance + pred_reward
 
@@ -337,11 +338,11 @@ class ReachingFrankaTask(VecTask):
 
         # Apply curriculum
         if self.max_timestep > 0:
-            completion_ratio = self.timestep / self.max_timestep
-            completion_check = np.where(completion_ratio < self.curriculum_switch_ratio)[0]
-            if len(completion_check) > 0:
-                self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'][:np.min(completion_check)])
-            else:
+            # completion_ratio = self.timestep / self.max_timestep
+            # completion_check = np.where(completion_ratio < self.curriculum_switch_ratio)[0]
+            # if len(completion_check) > 0:
+            #     self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'][:np.min(completion_check)])
+            # else:
                 self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'])
 
         # reset robot
@@ -384,6 +385,7 @@ class ReachingFrankaTask(VecTask):
 
         # Reset joint failure info
         self.joint_failure.reset(env_ids=env_ids)
+        
 
         # Find a better place for the viwer code
         self.gym.viewer_camera_look_at(
@@ -406,8 +408,8 @@ class ReachingFrankaTask(VecTask):
 
         self.joint_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
 
-        self.pred_fail_joint = actions[:, -1]
-
+        self.pred_fail_joint = torch.floor(3.99 * (actions[:, -1] + 1))  # maps [-1,1] to [0,7]
+        
         self.robot_dof_targets[:, :7] = torch.clamp(targets, self.robot_dof_lower_limits[:7], self.robot_dof_upper_limits[:7])
         self.gym.set_dof_position_target_tensor(self.sim, gymtorch.unwrap_tensor(self.robot_dof_targets))
 

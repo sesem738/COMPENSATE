@@ -85,7 +85,7 @@ if TASK_CFG["env"]["controlSpace"] == "joint":
     # agent.load("runs/Randomly_select_envs_for_joint_3_complete_failure/checkpoints/best_agent.pt")
 
     # Test weights
-    agent.load("runs/24-11-01_00-01-10-541279_PPO/checkpoints/best_agent.pt")
+    agent.load("runs/24-11-02_21-27-16-545102_PPO/checkpoints/best_agent.pt")
 elif TASK_CFG["env"]["controlSpace"] == "cartesian":
     # agent.load("./agent_cartesian_isaacgym.pt")
     agent.load("./best_agent.pt")

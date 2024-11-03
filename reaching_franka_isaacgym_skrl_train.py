@@ -63,7 +63,7 @@ MAX_TIMESTEPS = 25000
 from reaching_franka_isaacgym_env import ReachingFrankaTask, TASK_CFG
 
 TASK_CFG["headless"] = headless
-TASK_CFG["env"]["numEnvs"] = 4096
+TASK_CFG["env"]["numEnvs"] = 2048
 TASK_CFG["env"]["controlSpace"] = "joint"  # "joint" or "cartesian"
 TASK_CFG["env"]["timesteps"] = MAX_TIMESTEPS
 
