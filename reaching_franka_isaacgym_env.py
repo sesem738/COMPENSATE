@@ -36,7 +36,7 @@ TASK_CFG = {"name": "ReachingFranka",
                     "enableCurriculum": True,
                     "curriculum": {
                         "joints": [1, 3, 5],
-                        "failure": 'complete'
+                        "failure": 'fails_midway'
                         }
                     },
             "sim": {"dt": 0.0083,  # 1 / 120
@@ -143,7 +143,7 @@ class ReachingFrankaTask(VecTask):
             self.jacobian_end_effector = self.jacobian[:, self.rigid_body_dict_robot[self._end_effector_link] - 1, :, :7]
 
         # Testing single joint failure
-        self.joint_failure = JointFailure(failure_type=self.curriculum_config['failure'], dof_ids=[self.curriculum_config['joints'][0]],
+        self.joint_failure = JointFailure(failure_type=self.curriculum_config['failure'], dof_id_list=[self.curriculum_config['joints'][0]].copy(),
                 failure_prob=0.25, num_envs=self.num_envs, max_ep_len=self.max_episode_length)
         
         self.timestep = 0
@@ -287,7 +287,8 @@ class ReachingFrankaTask(VecTask):
         # If predicted failed joint id is == actual failed joint id, reward
         pred_reward = torch.where(self.pred_fail_joint == self.joint_failure.get_env_joint_failure_indices(), 0.5, -0.5)
         # print(f"Prediction Reward: {pred_reward}")
-        print(self.pred_fail_joint, self.joint_failure.get_env_joint_failure_indices())
+        # print(self.pred_fail_joint, self.joint_failure.get_env_joint_failure_indices())
+        print(self.joint_failure.get_env_joint_failure_indices())
 
         self.rew_buf[:] = -self._computed_distance + pred_reward
 
@@ -341,9 +342,9 @@ class ReachingFrankaTask(VecTask):
             # completion_ratio = self.timestep / self.max_timestep
             # completion_check = np.where(completion_ratio < self.curriculum_switch_ratio)[0]
             # if len(completion_check) > 0:
-            #     self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'][:np.min(completion_check)])
+            #     self.joint_failure.set_dof_id_list(dof_id_list=self.curriculum_config['joints'][:np.min(completion_check)].copy())
             # else:
-                self.joint_failure.set_dof_ids(dof_ids=self.curriculum_config['joints'])
+                self.joint_failure.set_dof_id_list(dof_id_list=self.curriculum_config['joints'].copy())
 
         # reset robot
         pos = torch.clamp(self.robot_default_dof_pos.unsqueeze(0) + 1 * (torch.rand((len(env_ids), self.num_robot_dofs), device=self.device) - 0.5),
