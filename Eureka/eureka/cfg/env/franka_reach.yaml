@@ -1,8 +1,0 @@
-task: FrankaReach
-env_name: franka_reach
-description: This task involves controlling a 7-DOF Franka Panda robot to reach 
-  randomly positioned spherical targets within its workspace while handling random 
-  joint failures. The robot must simultaneously achieve two objectives - 
-  reaching the target position with its end-effector and correctly identifying which 
-  joint has failed during the episode. Joint failures can occur at random times 
-  and completely lock the affected joint's motion.

@@ -123,7 +123,7 @@ class FrankaReach(VecTask):
         upper = gymapi.Vec3(spacing, spacing, spacing)
 
         asset_root = os.path.join(os.path.dirname(os.path.abspath(isaacgymenvs.__file__)), "../assets")
-        robot_asset_file = "urdf/franka_description/robots/franka_panda.urdf"
+        robot_asset_file = "urdf/franka_description/robots/franka_fr3.urdf"
         # robot_asset_file = "urdf/franka_description/robots/fr3_franka_hand.urdf"
 
         # robot asset
@@ -242,7 +242,8 @@ class FrankaReach(VecTask):
         # If predicted failed joint id is == actual failed joint id, reward
         pred_reward = torch.where(self.pred_fail_joint == self.joint_failure.get_env_joint_failure_indices(), 0.0, -0.0)
         # print(f"Prediction Reward: {pred_reward}")
-        # print(self.pred_fail_joint, self.joint_failure.get_env_joint_failure_indices())
+        if self.cfg['eval']:
+            print(self.pred_fail_joint, self.joint_failure.get_env_joint_failure_indices())
         # print(self.joint_failure.get_env_joint_failure_indices())
 
         self.rew_buf[:] = -self._computed_distance + pred_reward
@@ -298,13 +299,16 @@ class FrankaReach(VecTask):
     def reset_idx(self, env_ids):
 
         # Apply curriculum
-        if self.max_timestep > 0:
+        if self.max_timestep > 0 and (not self.cfg['eval']):
             completion_ratio = self.timestep / self.max_timestep
+            # print('Completion percentage: ' + str(completion_ratio*100))
             completion_check = np.where(completion_ratio < self.curriculum_switch_ratio)[0]
             if len(completion_check) > 0:
                 self.joint_failure.set_dof_id_list(dof_id_list=self.curriculum_config['joints'][:np.min(completion_check)].copy())
             else:
                 self.joint_failure.set_dof_id_list(dof_id_list=self.curriculum_config['joints'].copy())
+        else:
+            self.joint_failure.set_dof_id_list(dof_id_list=self.curriculum_config['joints'].copy())
 
         # reset robot
         pos = torch.clamp(self.robot_default_dof_pos.unsqueeze(0) + 1 * (torch.rand((len(env_ids), self.num_robot_dofs), device=self.device) - 0.5),
@@ -377,7 +381,6 @@ class FrankaReach(VecTask):
         #     targets = self.robot_dof_targets[:, :7] + delta_dof_pos
 
         self.joint_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
-        # print('Failed joint: ' + str(self.joint_failure.get_env_joint_failure_indices()))
 
         self.pred_fail_joint = torch.floor(3.99 * (actions[:, -1] + 1))  # maps [-1,1] to [0,7]
         

@@ -7,6 +7,12 @@ from typing import Optional
 # 2) Ability to randomize joint selection across all reseting environments (including default no joint 7)
 # 3) Ability to select from failure types
 # 4) Ability to apply failure specific randomizations
+# 5) Track statistics: percentage of joint selection. Reset at curriculum change
+
+# Updates
+# Joint 7 is a valid curriculum entry
+# set_dof_id_list does not append 7 anymore
+# apply remains the same 
 
 
 class JointFailure:
@@ -51,8 +57,7 @@ class JointFailure:
     def set_dof_id_list(self, dof_id_list:list = [0]):
         """Used to update curriculum"""
 
-        assert all(i < 7 for i in dof_id_list), f"Values in dof_id_list must be integers between 0-6"
-        dof_id_list.append(7)
+        assert all(i < 8 for i in dof_id_list), f"Values in dof_id_list must be integers between 0-7, where 7 implies no selection"
         self.dof_id_list = dof_id_list.copy()
         # self.env_selection_prob = 1 / len(self.dof_id_list)
     
@@ -109,6 +114,38 @@ class JointFailure:
         """
         return self.envs_joints_failed
         
+class JointFailureStatsWrapper(JointFailure):
+    def __init__(self, failure_type = 'none', dof_id_list = [0], failure_prob = 0.1, num_envs = 1024, max_ep_len = 500, device = "cuda:0"):
+        self.sum_values = torch.zeros(len(dof_id_list), device=device)
+        print('Joint failure has been initialized')
+        # print('Percentages at initialization: ' + str(self.sum_values/(len(dof_id_list)+1)))
+        self.num_of_resets = 0
+        self.device = device
+
+        super().__init__(failure_type, dof_id_list, failure_prob, num_envs, max_ep_len, device)
+        # initialize sum logging variable [num joints] - Based on initial curriculum
+    
+    def reset(self, env_ids, failure_prob = None):
+        super().reset(env_ids, failure_prob)
+
+        self.num_of_resets += len(env_ids)
+        # Update sum for env_id by +1
+        for i in range(len(env_ids)):
+            for j in range(len(self.dof_id_list)):
+                if self.dof_id_list[j] == self.dof_ids[i]:
+                    self.sum_values[j] += 1.0
+    
+    def set_dof_id_list(self, dof_id_list = [0]):
+        # Print stats for completed curriculums
+        if self.num_of_resets != 0:
+            print('Curriculum Percentages: ' + str(self.sum_values/self.num_of_resets))
+            print('Total: ' + str(torch.sum(self.sum_values/self.num_of_resets)))
+            self.num_of_resets = 0
+
+        super().set_dof_id_list(dof_id_list)
+        
+        # Reset sum variable
+        self.sum_values = torch.zeros(len(self.dof_id_list), device=self.device)
 
 class MultiJointFailure:
         def __init__(self):
