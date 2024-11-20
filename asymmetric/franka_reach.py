@@ -23,7 +23,7 @@ class FrankaReach(VecTask):
         self._dof_vel_scale = self.cfg["env"]["dofVelocityScale"]
         self._control_space = self.cfg["env"]["controlSpace"]
         self.max_episode_length = self.cfg["env"]["maxEpisodeLength"]  # name required for VecTask
-        self.max_timestep = 500 # self.cfg["env"]["timesteps"]  #TODO:Arbitrary for now
+        self.max_timestep = 16*500 # Can we set it to horizon_length * num_epochs ?
 
         self.debug_viz = self.cfg["env"]["enableDebugVis"]
 
@@ -240,7 +240,7 @@ class FrankaReach(VecTask):
     def compute_reward(self):
 
         # If predicted failed joint id is == actual failed joint id, reward
-        pred_reward = torch.where(self.pred_fail_joint == self.joint_failure.get_env_joint_failure_indices(), 0.0, -0.0)
+        pred_reward = torch.where(self.pred_fail_joint == self.joint_failure.get_env_joint_failure_indices(), 0.0, -0.5)
         # print(f"Prediction Reward: {pred_reward}")
         if self.cfg['eval']:
             print(self.pred_fail_joint, self.joint_failure.get_env_joint_failure_indices())
@@ -299,6 +299,9 @@ class FrankaReach(VecTask):
     def reset_idx(self, env_ids):
 
         # Apply curriculum
+        if self.cfg['eval']:
+            print('Resetting envs: ' + str(env_ids))
+
         if self.max_timestep > 0 and (not self.cfg['eval']):
             completion_ratio = self.timestep / self.max_timestep
             # print('Completion percentage: ' + str(completion_ratio*100))
@@ -381,6 +384,8 @@ class FrankaReach(VecTask):
         #     targets = self.robot_dof_targets[:, :7] + delta_dof_pos
 
         self.joint_failure.apply(current_dofs=self.dof_pos, targets_dofs=targets, current_step=self.progress_buf)
+        # if (self.progress_buf<1).any():
+        #     print('Failed joint: ' + str(self.joint_failure.get_env_joint_failure_indices()))
 
         self.pred_fail_joint = torch.floor(3.99 * (actions[:, -1] + 1))  # maps [-1,1] to [0,7]
         
