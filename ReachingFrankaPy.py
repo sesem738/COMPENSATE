@@ -127,6 +127,8 @@ class ReachingFrankaPy(gym.Env):
                 print("Invalid input. Try something like: 0.65, 0.0, 0.2")
         
         input("Press [Enter] to start episode")
+
+        self.init_time = rospy.Time.now().to_time()
         
         # Reset episode tracking
         self.progress_buf = 0
@@ -166,7 +168,7 @@ class ReachingFrankaPy(gym.Env):
         # Create and publish message
         traj_gen_proto_msg = JointPositionSensorMessage(
             id=self.msg_id, 
-            timestamp=rospy.Time.now().to_time(),
+            timestamp=rospy.Time.now().to_time() - self.init_time,
             joints=target_joints.tolist()
         )
         ros_msg = make_sensor_group_msg(
