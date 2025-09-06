@@ -1,3 +1,0 @@
-# COMPENSATE
-
-Terrible name!!!
